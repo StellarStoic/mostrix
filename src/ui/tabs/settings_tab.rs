@@ -256,8 +256,11 @@ pub fn render_settings_tab(
         .skip(offset)
         .take(visible_rows)
         .map(|(i, (action, label))| {
-            let row_idx = offset + i;
-            let style = if row_idx == selected_option {
+            // `enumerate()` runs before `skip()`, so `i` is already the absolute
+            // row index. Adding `offset` a second time made the marker drift
+            // upward while the list scrolled, and match nothing at the end,
+            // while Enter kept acting on the real selection.
+            let style = if i == selected_option {
                 Style::default()
                     .fg(PRIMARY_COLOR)
                     .add_modifier(Modifier::BOLD)
