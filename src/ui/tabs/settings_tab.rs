@@ -521,4 +521,80 @@ mod tests {
             ));
         }
     }
+
+    /// Row index of the first buffer line whose text contains `needle`.
+    fn row_of(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<u16> {
+        (0..buf.area.height).find(|&y| row_text(buf, y).contains(needle))
+    }
+
+    fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
+        let mut line = String::new();
+        for x in 0..buf.area.width {
+            line.push_str(buf[(x, y)].symbol());
+        }
+        line
+    }
+
+    /// The whole tab inherits `PRIMARY_COLOR` as its foreground, so the selected
+    /// menu row is distinguished by `BOLD`, not by colour.
+    fn row_is_bold(buf: &ratatui::buffer::Buffer, y: u16) -> bool {
+        (0..buf.area.width).any(|x| buf[(x, y)].modifier.contains(Modifier::BOLD))
+    }
+
+    fn rendered_labels(role: UserRole) -> Vec<String> {
+        settings_rows(role)
+            .iter()
+            .map(|(action, label)| row_label(*action, label, true))
+            .collect()
+    }
+
+    /// Labels of the menu rows that are rendered bold in this buffer.
+    fn bold_menu_rows(buf: &ratatui::buffer::Buffer, labels: &[String]) -> Vec<String> {
+        labels
+            .iter()
+            .filter(|label| row_of(buf, label).is_some_and(|y| row_is_bold(buf, y)))
+            .cloned()
+            .collect()
+    }
+
+    /// 80x12 leaves a 5-row list area for a 17-row menu, so the menu scrolls.
+    fn render_menu(selected: usize, height: u16) -> ratatui::buffer::Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
+        terminal
+            .draw(|f| {
+                render_settings_tab(f, f.area(), UserRole::User, selected, true);
+            })
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// Exactly the entry that Enter acts on must be marked, at every position,
+    /// including once the menu scrolls. Before the fix the marker drifted upward
+    /// while scrolling and disappeared for the last entries.
+    #[test]
+    fn highlight_marks_the_selected_row_when_the_menu_scrolls() {
+        let labels = rendered_labels(UserRole::User);
+
+        for selected in 0..labels.len() {
+            let buf = render_menu(selected, 12);
+            assert_eq!(
+                bold_menu_rows(&buf, &labels),
+                vec![labels[selected].clone()],
+                "with entry {selected} selected, the marked row does not match the row Enter acts on"
+            );
+        }
+    }
+
+    /// Guard: the same holds where the menu fits without scrolling.
+    #[test]
+    fn highlight_marks_the_selected_row_without_scrolling() {
+        let labels = rendered_labels(UserRole::User);
+        let mid = labels.len() / 2;
+        let buf = render_menu(mid, 40);
+
+        assert!(
+            bold_menu_rows(&buf, &labels).contains(&labels[mid]),
+            "the selected row is not marked when the whole menu is visible"
+        );
+    }
 }
